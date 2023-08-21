@@ -1,0 +1,185 @@
+From 9b551d0bdba846234d2027f0e4d74fb30980da88 Mon Sep 17 00:00:00 2001
+From: DestinedCodes <yiradesat@gmail.com>
+Date: Mon, 21 Aug 2023 06:33:31 +0100
+Subject: [PATCH 1/2] Update: setGraphstate to false until start streaming,
+ Update: Continously fetch data fromthe server
+
+---
+ src/App.tsx | 22 ++++++++++++++++------
+ 1 file changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/src/App.tsx b/src/App.tsx
+index 0728518..cc697c3 100755
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -8,6 +8,7 @@ import './App.css';
+  */
+ interface IState {
+   data: ServerRespond[],
++  showGraph: boolean,
+ }
+ 
+ /**
+@@ -22,6 +23,7 @@ class App extends Component<{}, IState> {
+       // data saves the server responds.
+       // We use this state to parse data down to the child element (Graph) as element property
+       data: [],
++      showGraph: false,
+     };
+   }
+ 
+@@ -29,18 +31,26 @@ class App extends Component<{}, IState> {
+    * Render Graph react component with state.data parse as property data
+    */
+   renderGraph() {
+-    return (<Graph data={this.state.data}/>)
++    if (this.state.showGraph) {
++      return (<Graph data={this.state.data}/>)
++    }
+   }
+ 
+   /**
+    * Get new data from server and update the state with the new data
+    */
+   getDataFromServer() {
+-    DataStreamer.getData((serverResponds: ServerRespond[]) => {
+-      // Update the state by creating a new array of data that consists of
+-      // Previous data in the state and the new data from server
+-      this.setState({ data: [...this.state.data, ...serverResponds] });
+-    });
++    let x = 0;
++    const interval = setInterval(() => {
++      DataStreamer.getData((serverResponds: ServerRespond[]) => { 
++        this.setState({ data: serverResponds, showGraph: true,
++        });
++      });
++      x++;
++      if (x > 1000) {
++        clearInterval(interval);
++      }
++    }, 100);
+   }
+ 
+   /**
+-- 
+2.34.1
+
+
+From 2e66ab3399c4768e953ee96a801bc7ac5e7b784c Mon Sep 17 00:00:00 2001
+From: DestinedCodes <yiradesat@gmail.com>
+Date: Mon, 21 Aug 2023 09:34:26 +0100
+Subject: [PATCH 2/2] Update: Enhanced graph rendering for better insight
+
+---
+ src/Graph.tsx | 60 ++++++++++++++++++++++++++++++++-------------------
+ 1 file changed, 38 insertions(+), 22 deletions(-)
+
+diff --git a/src/Graph.tsx b/src/Graph.tsx
+index 3b2a7da..cd1fcc3 100644
+--- a/src/Graph.tsx
++++ b/src/Graph.tsx
+@@ -1,21 +1,21 @@
+-import React, { Component } from 'react';
+-import { Table } from '@finos/perspective';
+-import { ServerRespond } from './DataStreamer';
+-import './Graph.css';
++import React, { Component } from "react";
++import { Table } from "@finos/perspective";
++import { ServerRespond } from "./DataStreamer";
++import "./Graph.css";
+ 
+ /**
+  * Props declaration for <Graph />
+  */
+ interface IProps {
+-  data: ServerRespond[],
++  data: ServerRespond[];
+ }
+ 
+ /**
+  * Perspective library adds load to HTMLElement prototype.
+  * This interface acts as a wrapper for Typescript compiler.
+  */
+-interface PerspectiveViewerElement {
+-  load: (table: Table) => void,
++interface PerspectiveViewerElement extends HTMLElement {
++  load: (table: Table) => void;
+ }
+ 
+ /**
+@@ -27,18 +27,20 @@ class Graph extends Component<IProps, {}> {
+   table: Table | undefined;
+ 
+   render() {
+-    return React.createElement('perspective-viewer');
++    return React.createElement("perspective-viewer");
+   }
+ 
+   componentDidMount() {
+     // Get element to attach the table from the DOM.
+-    const elem: PerspectiveViewerElement = document.getElementsByTagName('perspective-viewer')[0] as unknown as PerspectiveViewerElement;
++    const elem = (document.getElementsByTagName(
++      "perspective-viewer"
++    )[0] as unknown) as PerspectiveViewerElement;
+ 
+     const schema = {
+-      stock: 'string',
+-      top_ask_price: 'float',
+-      top_bid_price: 'float',
+-      timestamp: 'date',
++      stock: "string",
++      top_ask_price: "float",
++      top_bid_price: "float",
++      timestamp: "date"
+     };
+ 
+     if (window.perspective && window.perspective.worker()) {
+@@ -49,6 +51,18 @@ class Graph extends Component<IProps, {}> {
+ 
+       // Add more Perspective configurations here.
+       elem.load(this.table);
++      elem.setAttribute("view", "y_line");
++      elem.setAttribute("column-pivots", '["stock"]');
++      elem.setAttribute("row-pivots", '["timestamp"]');
++      elem.setAttribute("columns", '["top_ask_price"]');
++      elem.setAttribute(
++        "aggregates",
++        `
++        {"stock":"distinct count",
++        "top_ask_price":"avg",
++        "top_bid_price":"avg",
++        "timestamp":"distinct count"}`
++      );
+     }
+   }
+ 
+@@ -57,15 +71,17 @@ class Graph extends Component<IProps, {}> {
+     if (this.table) {
+       // As part of the task, you need to fix the way we update the data props to
+       // avoid inserting duplicated entries into Perspective table again.
+-      this.table.update(this.props.data.map((el: any) => {
+-        // Format the data from ServerRespond to the schema
+-        return {
+-          stock: el.stock,
+-          top_ask_price: el.top_ask && el.top_ask.price || 0,
+-          top_bid_price: el.top_bid && el.top_bid.price || 0,
+-          timestamp: el.timestamp,
+-        };
+-      }));
++      this.table.update(
++        this.props.data.map((el: any) => {
++          // Format the data from ServerRespond to the schema
++          return {
++            stock: el.stock,
++            top_ask_price: (el.top_ask && el.top_ask.price) || 0,
++            top_bid_price: (el.top_bid && el.top_bid.price) || 0,
++            timestamp: el.timestamp
++          };
++        })
++      );
+     }
+   }
+ }
+-- 
+2.34.1
+
